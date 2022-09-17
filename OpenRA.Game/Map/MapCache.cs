@@ -42,10 +42,28 @@ namespace OpenRA
 		readonly List<MapDirectoryTracker> mapDirectoryTrackers = new List<MapDirectoryTracker>();
 
 		/// <summary>
-		/// If a map was added oldUID will be null, if updated oldUId will point to the outdated map
-		/// Event is not called when map is deleted
+		/// The most recenly modified or loaded map at runtime
 		/// </summary>
-		public event Action<string, string> MapUpdated = (oldUID, newUID) => { };
+		public string LastModifiedMap { get; private set; } = null;
+		readonly Dictionary<string, string> mapUpdates = new Dictionary<string, string>();
+
+		string lastLoadedLastModifiedMap;
+
+		/// <summary>
+		/// If LastModifiedMap was picked already, returns a null
+		/// </summary>
+		public string PickLastModifiedMap(MapVisibility visibility)
+		{
+			UpdateMaps();
+			var map = string.IsNullOrEmpty(LastModifiedMap) ? null : this[LastModifiedMap];
+			if (map != null && map.Status == MapStatus.Available && map.Visibility.HasFlag(visibility) && lastLoadedLastModifiedMap != LastModifiedMap)
+			{
+				lastLoadedLastModifiedMap = LastModifiedMap;
+				return lastLoadedLastModifiedMap;
+			}
+
+			return null;
+		}
 
 		public MapCache(ModData modData)
 		{
@@ -109,6 +127,9 @@ namespace OpenRA
 				foreach (var map in kv.Key.Contents)
 					LoadMap(map, kv.Key, kv.Value, mapGrid, null);
 			}
+
+			// We only want to track maps in runtime, not at loadtime
+			LastModifiedMap = null;
 		}
 
 		public void LoadMap(string map, IReadOnlyPackage package, MapClassification classification, MapGrid mapGrid, string oldMap)
@@ -125,7 +146,11 @@ namespace OpenRA
 						previews[uid].UpdateFromMap(mapPackage, package, classification, modData.Manifest.MapCompatibility, mapGrid.Type);
 
 						if (oldMap != uid)
-							MapUpdated(oldMap, uid);
+						{
+							LastModifiedMap = uid;
+							if (oldMap != null)
+								mapUpdates.Add(oldMap, uid);
+						}
 					}
 				}
 			}
@@ -310,6 +335,22 @@ namespace OpenRA
 			Log.Write("debug", "MapCache.LoadAsyncInternal ended");
 		}
 
+		public string GetUpdatedMap(string uid)
+		{
+			if (uid == null)
+				return null;
+
+			while (this[uid].Status != MapStatus.Available)
+			{
+				if (mapUpdates.ContainsKey(uid))
+					uid = mapUpdates[uid];
+				else
+					return null;
+			}
+
+			return uid;
+		}
+
 		public void CacheMinimap(MapPreview preview)
 		{
 			bool launchPreviewLoaderThread;
@@ -357,10 +398,12 @@ namespace OpenRA
 
 		public string ChooseInitialMap(string initialUid, MersenneTwister random)
 		{
-			if (string.IsNullOrEmpty(initialUid) || previews[initialUid].Status != MapStatus.Available)
+			UpdateMaps();
+			var map = string.IsNullOrEmpty(initialUid) ? null : previews[initialUid];
+			if (map == null || map.Status != MapStatus.Available || !map.Visibility.HasFlag(MapVisibility.Lobby) || (map.Class != MapClassification.System && map.Class != MapClassification.User))
 			{
 				var selected = previews.Values.Where(IsSuitableInitialMap).RandomOrDefault(random) ??
-					previews.Values.FirstOrDefault(m => m.Status == MapStatus.Available && m.Visibility.HasFlag(MapVisibility.Lobby));
+					previews.Values.FirstOrDefault(m => m.Status == MapStatus.Available && m.Visibility.HasFlag(MapVisibility.Lobby) && (m.Class == MapClassification.System || m.Class == MapClassification.User));
 				return selected == null ? string.Empty : selected.Uid;
 			}
 

@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -69,6 +69,8 @@ namespace OpenRA.Server
 		readonly TypeDictionary serverTraits = new TypeDictionary();
 		readonly PlayerDatabase playerDatabase;
 
+		OrderBuffer orderBuffer;
+
 		volatile ServerState internalState = ServerState.WaitingPlayers;
 
 		readonly BlockingCollection<IServerEvent> events = new BlockingCollection<IServerEvent>();
@@ -77,6 +79,7 @@ namespace OpenRA.Server
 		GameInformation gameInfo;
 		readonly List<GameInformation.Player> worldPlayers = new List<GameInformation.Player>();
 		readonly Stopwatch pingUpdated = Stopwatch.StartNew();
+		readonly PlayerMessageTracker playerMessageTracker;
 
 		[TranslationReference]
 		static readonly string CustomRules = "custom-rules";
@@ -126,14 +129,14 @@ namespace OpenRA.Server
 		[TranslationReference("command")]
 		static readonly string UnknownServerCommand = "unknown-server-command";
 
-		[TranslationReference("remaining")]
-		static readonly string ChatDisabled = "chat-disabled";
-
 		[TranslationReference("player")]
 		static readonly string LobbyDisconnected = "lobby-disconnected";
 
-		[TranslationReference("player", "team")]
+		[TranslationReference("player")]
 		static readonly string PlayerDisconnected = "player-disconnected";
+
+		[TranslationReference("player", "team")]
+		static readonly string PlayerTeamDisconnected = "player-team-disconnected";
 
 		[TranslationReference("player")]
 		static readonly string ObserverDisconnected = "observer-disconnected";
@@ -314,6 +317,8 @@ namespace OpenRA.Server
 			Map = ModData.MapCache[settings.Map];
 			MapStatusCache = new MapStatusCache(modData, MapStatusChanged, type == ServerType.Dedicated && settings.EnableLintChecks);
 
+			playerMessageTracker = new PlayerMessageTracker(this, DispatchOrdersToClient, SendLocalizedMessageTo);
+
 			LobbyInfo = new Session
 			{
 				GlobalSettings =
@@ -361,6 +366,18 @@ namespace OpenRA.Server
 
 						foreach (var t in serverTraits.WithInterface<ITick>())
 							t.Tick(this);
+
+						if (State == ServerState.GameStarted)
+						{
+							foreach (var (playerIndex, scale) in orderBuffer.GetTickScales())
+							{
+								var frame = CreateTickScaleFrame(scale);
+								var con = Conns.SingleOrDefault(c => c.PlayerIndex == playerIndex);
+
+								if (con != null && con.Validated)
+									DispatchFrameToClient(con, playerIndex, frame);
+							}
+						}
 					}
 
 					if (State == ServerState.ShuttingDown)
@@ -417,7 +434,7 @@ namespace OpenRA.Server
 				var ms = new MemoryStream(8);
 				ms.WriteArray(BitConverter.GetBytes(ProtocolVersion.Handshake));
 				ms.WriteArray(BitConverter.GetBytes(newConn.PlayerIndex));
-				newConn.SendData(ms.ToArray());
+				newConn.TrySendData(ms.ToArray());
 
 				// Dispatch a handshake order
 				var request = new HandshakeRequest
@@ -544,8 +561,8 @@ namespace OpenRA.Server
 						newConn.Validated = true;
 
 						// Disable chat UI to stop the client sending messages that we know we will reject
-						if (!client.IsAdmin && Settings.JoinChatDelay > 0)
-							DispatchOrdersToClient(newConn, 0, 0, new Order("DisableChatEntry", null, false) { ExtraData = (uint)Settings.JoinChatDelay }.Serialize());
+						if (!client.IsAdmin && Settings.FloodLimitJoinCooldown > 0)
+							playerMessageTracker.DisableChatUI(newConn, Settings.FloodLimitJoinCooldown);
 
 						Log.Write("server", $"Client {newConn.PlayerIndex}: Accepted connection from {newConn.EndPoint}.");
 
@@ -720,14 +737,10 @@ namespace OpenRA.Server
 
 		void DispatchFrameToClient(Connection c, int client, byte[] frameData)
 		{
-			try
-			{
-				c.SendData(frameData);
-			}
-			catch (Exception e)
+			if (!c.TrySendData(frameData))
 			{
 				DropClient(c);
-				Log.Write("server", $"Dropping client {client.ToString(CultureInfo.InvariantCulture)} because dispatching orders failed: {e}");
+				Log.Write("server", $"Dropping client {client.ToString(CultureInfo.InvariantCulture)} because dispatching orders failed!");
 			}
 		}
 
@@ -890,6 +903,8 @@ namespace OpenRA.Server
 					frame += OrderLatency;
 					DispatchFrameToClient(conn, conn.PlayerIndex, CreateAckFrame(frame, 1));
 
+					orderBuffer.AddOrderTimestamp(conn.PlayerIndex);
+
 					// Track the last frame for each client so the disconnect handling can write
 					// an EndOfOrders marker with the correct frame number.
 					// TODO: This should be handled by the order buffering system too
@@ -935,16 +950,16 @@ namespace OpenRA.Server
 
 		public void SendLocalizedMessage(string key, Dictionary<string, object> arguments = null)
 		{
-			var text = new LocalizedMessage(key, arguments).Serialize();
+			var text = LocalizedMessage.Serialize(key, arguments);
 			DispatchServerOrdersToClients(Order.FromTargetString("LocalizedMessage", text, true));
 
 			if (Type == ServerType.Dedicated)
-				WriteLineWithTimeStamp(ModData.Translation.GetFormattedMessage(key, arguments));
+				WriteLineWithTimeStamp(ModData.Translation.GetString(key, arguments));
 		}
 
 		public void SendLocalizedMessageTo(Connection conn, string key, Dictionary<string, object> arguments = null)
 		{
-			var text = new LocalizedMessage(key, arguments).Serialize();
+			var text = LocalizedMessage.Serialize(key, arguments);
 			DispatchOrdersToClient(conn, 0, 0, Order.FromTargetString("LocalizedMessage", text, true).Serialize());
 		}
 
@@ -990,14 +1005,7 @@ namespace OpenRA.Server
 
 					case "Chat":
 						{
-							var isAdmin = GetClient(conn)?.IsAdmin ?? false;
-							var connected = conn.ConnectionTimer.ElapsedMilliseconds;
-							if (!isAdmin && connected < Settings.JoinChatDelay)
-							{
-								var remaining = (Settings.JoinChatDelay - connected + 999) / 1000;
-								SendLocalizedMessageTo(conn, ChatDisabled, Translation.Arguments("remaining", remaining));
-							}
-							else
+							if (Type == ServerType.Local || !playerMessageTracker.IsPlayerAtFloodLimit(conn))
 								DispatchOrdersToClients(conn, 0, o.Serialize());
 
 							break;
@@ -1155,6 +1163,7 @@ namespace OpenRA.Server
 		{
 			lock (LobbyInfo)
 			{
+				orderBuffer?.RemovePlayer(toDrop.PlayerIndex);
 				Conns.Remove(toDrop);
 
 				var dropClient = LobbyInfo.Clients.FirstOrDefault(c => c.Index == toDrop.PlayerIndex);
@@ -1168,8 +1177,10 @@ namespace OpenRA.Server
 				{
 					if (dropClient.IsObserver)
 						SendLocalizedMessage(ObserverDisconnected, Translation.Arguments("player", dropClient.Name));
+					else if (dropClient.Team > 0)
+						SendLocalizedMessage(PlayerTeamDisconnected, Translation.Arguments("player", dropClient.Name, "team", dropClient.Team));
 					else
-						SendLocalizedMessage(PlayerDisconnected, Translation.Arguments("player", dropClient.Name, "team", dropClient.Team));
+						SendLocalizedMessage(PlayerDisconnected, Translation.Arguments("player", dropClient.Name));
 				}
 				else
 					SendLocalizedMessage(LobbyDisconnected, Translation.Arguments("player", dropClient.Name));
@@ -1287,7 +1298,7 @@ namespace OpenRA.Server
 		{
 			lock (LobbyInfo)
 			{
-				WriteLineWithTimeStamp(ModData.Translation.GetFormattedMessage(GameStarted));
+				WriteLineWithTimeStamp(ModData.Translation.GetString(GameStarted));
 
 				// Drop any players who are not ready
 				foreach (var c in Conns.Where(c => !c.Validated || GetClient(c).IsInvalid).ToArray())
@@ -1330,12 +1341,16 @@ namespace OpenRA.Server
 				SyncLobbyInfo();
 				State = ServerState.GameStarted;
 
+				var gameSpeeds = Game.ModData.Manifest.Get<GameSpeeds>();
+				var gameSpeedName = LobbyInfo.GlobalSettings.OptionOrDefault("gamespeed", gameSpeeds.DefaultSpeed);
+
+				var gameSpeed = gameSpeeds.Speeds[gameSpeedName];
+
+				orderBuffer = new OrderBuffer();
+				orderBuffer.Start(gameSpeed, Conns.Where(c => c.Validated).Select(c => c.PlayerIndex));
+
 				if (Type != ServerType.Local)
-				{
-					var gameSpeeds = Game.ModData.Manifest.Get<GameSpeeds>();
-					var gameSpeedName = LobbyInfo.GlobalSettings.OptionOrDefault("gamespeed", gameSpeeds.DefaultSpeed);
-					OrderLatency = gameSpeeds.Speeds[gameSpeedName].OrderLatency;
-				}
+					OrderLatency = gameSpeed.OrderLatency;
 
 				if (GameSave == null && LobbyInfo.GlobalSettings.GameSavesEnabled)
 					GameSave = new GameSave();
@@ -1464,7 +1479,11 @@ namespace OpenRA.Server
 		{
 			readonly Connection connection;
 			readonly int[] pingHistory;
+
+			// TODO: future net code changes
+			#pragma warning disable IDE0052
 			readonly byte queueLength;
+			#pragma warning restore IDE0052
 
 			public ConnectionPingEvent(Connection connection, int[] pingHistory, byte queueLength)
 			{

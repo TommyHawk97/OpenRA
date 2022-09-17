@@ -1,5 +1,5 @@
 --[[
-   Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+   Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
    This file is part of OpenRA, which is free software. It is made
    available to you under the terms of the GNU General Public License
    as published by the Free Software Foundation, either version 3 of
@@ -72,7 +72,7 @@ SendWaves = function(counter, Waves)
 end
 
 SendHeli = function(heli)
-	units = Reinforcements.ReinforceWithTransport(Nod, "tran", heli.types, heli.entry, { heli.entry[1] })
+	local units = Reinforcements.ReinforceWithTransport(Nod, "tran", heli.types, heli.entry, { heli.entry[1] })
 	Utils.Do(units[2], function(actor)
 		actor.Hunt()
 		Trigger.OnIdle(actor, actor.Hunt)
@@ -84,12 +84,12 @@ SendHeli = function(heli)
 end
 
 MoveInitialArty = function(arty, waypoints)
-	units = { arty }
+	local units = { arty }
 	MoveAndIdle(units, waypoints)
 end
 
 TankTerror = function(tank)
-	units = { tank }
+	local units = { tank }
 	MoveAndHunt(units, WaypointGroupVillageLeft)
 end
 

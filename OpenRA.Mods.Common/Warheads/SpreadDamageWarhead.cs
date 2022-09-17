@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -18,6 +18,7 @@ namespace OpenRA.Mods.Common.Warheads
 {
 	public enum DamageCalculationType { HitShape, ClosestTargetablePosition, CenterPosition }
 
+	[Desc("Apply damage in a specified range.")]
 	public class SpreadDamageWarhead : DamageWarhead, IRulesetLoaded<WeaponInfo>
 	{
 		[Desc("Range between falloff steps.")]
@@ -62,20 +63,32 @@ namespace OpenRA.Mods.Common.Warheads
 				if (!IsValidAgainst(victim, firedBy))
 					continue;
 
-				var closestActiveShape = victim.TraitsImplementing<HitShape>()
-					.Where(Exts.IsTraitEnabled)
-					.Select(s => (HitShape: s, Distance: s.DistanceFromEdge(victim, pos)))
-					.MinByOrDefault(s => s.Distance);
+				HitShape closestActiveShape = null;
+				var closestDistance = int.MaxValue;
+
+				// PERF: Avoid using TraitsImplementing<HitShape> that needs to find the actor in the trait dictionary.
+				foreach (var targetPos in victim.EnabledTargetablePositions)
+				{
+					if (targetPos is HitShape h)
+					{
+						var distance = h.DistanceFromEdge(victim, pos).Length;
+						if (distance < closestDistance)
+						{
+							closestDistance = distance;
+							closestActiveShape = h;
+						}
+					}
+				}
 
 				// Cannot be damaged without an active HitShape.
-				if (closestActiveShape.HitShape == null)
+				if (closestActiveShape == null)
 					continue;
 
 				var falloffDistance = 0;
 				switch (DamageCalculationType)
 				{
 					case DamageCalculationType.HitShape:
-						falloffDistance = closestActiveShape.Distance.Length;
+						falloffDistance = closestDistance;
 						break;
 					case DamageCalculationType.ClosestTargetablePosition:
 						falloffDistance = victim.GetTargetablePositions().Select(x => (x - pos).Length).Min();
@@ -107,7 +120,7 @@ namespace OpenRA.Mods.Common.Warheads
 					ImpactOrientation = impactOrientation,
 				};
 
-				InflictDamage(victim, firedBy, closestActiveShape.HitShape, updatedWarheadArgs);
+				InflictDamage(victim, firedBy, closestActiveShape, updatedWarheadArgs);
 			}
 		}
 

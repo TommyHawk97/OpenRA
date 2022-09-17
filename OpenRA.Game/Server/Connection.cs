@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -154,10 +154,8 @@ namespace OpenRA.Server
 
 					// Regularly check player ping
 					if (lastPingSent.ElapsedMilliseconds > 1000)
-					{
-						sendQueue.Add(CreatePingFrame());
-						lastPingSent.Restart();
-					}
+						if (TrySendData(CreatePingFrame()))
+							lastPingSent.Restart();
 
 					// Send all data immediately, we will block again on read
 					while (sendQueue.TryTake(out var data, 0))
@@ -195,9 +193,21 @@ namespace OpenRA.Server
 			}
 		}
 
-		public void SendData(byte[] data)
+		public bool TrySendData(byte[] data)
 		{
-			sendQueue.Add(data);
+			if (sendQueue.IsAddingCompleted)
+				return false;
+
+			try
+			{
+				sendQueue.Add(data);
+				return true;
+			}
+			catch (InvalidOperationException)
+			{
+				// Occurs if the collection is marked completed for adding by another thread.
+				return false;
+			}
 		}
 
 		public void Dispose()

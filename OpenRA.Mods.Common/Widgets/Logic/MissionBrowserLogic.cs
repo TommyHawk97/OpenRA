@@ -25,6 +25,24 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 	{
 		enum PlayingVideo { None, Info, Briefing, GameStart }
 
+		[TranslationReference]
+		static readonly string NoVideoTitle = "no-video-title";
+
+		[TranslationReference]
+		static readonly string NoVideoPrompt = "no-video-prompt";
+
+		[TranslationReference]
+		static readonly string NoVideoCancel = "no-video-cancel";
+
+		[TranslationReference]
+		static readonly string CantPlayTitle = "cant-play-title";
+
+		[TranslationReference]
+		static readonly string CantPlayPrompt = "cant-play-prompt";
+
+		[TranslationReference]
+		static readonly string CantPlayCancel = "cant-play-cancel";
+
 		readonly ModData modData;
 		readonly Action onStart;
 		readonly ScrollPanelWidget descriptionPanel;
@@ -50,7 +68,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		string gameSpeed;
 
 		[ObjectCreator.UseCtor]
-		public MissionBrowserLogic(Widget widget, ModData modData, World world, Action onStart, Action onExit)
+		public MissionBrowserLogic(Widget widget, ModData modData, World world, Action onStart, Action onExit, string initialMap)
 		{
 			this.modData = modData;
 			this.onStart = onStart;
@@ -136,7 +154,17 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			}
 
 			if (allPreviews.Count > 0)
-				SelectMap(allPreviews.First());
+			{
+				var uid = modData.MapCache.GetUpdatedMap(initialMap);
+				var map = uid == null ? null : modData.MapCache[uid];
+				if (map != null && map.Visibility.HasFlag(MapVisibility.MissionSelector))
+				{
+					SelectMap(map);
+					missionList.ScrollToSelectedItem();
+				}
+				else
+					SelectMap(allPreviews.First());
+			}
 
 			// Preload map preview to reduce jank
 			new Thread(() =>
@@ -181,7 +209,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 		void CreateMissionGroup(string title, IEnumerable<MapPreview> previews, Action onExit)
 		{
-			var header = ScrollItemWidget.Setup(headerTemplate, () => true, () => { });
+			var header = ScrollItemWidget.Setup(headerTemplate, () => false, () => { });
 			header.Get<LabelWidget>("LABEL").GetText = () => title;
 			missionList.AddChild(header);
 
@@ -234,7 +262,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					infoVideo = missionData.BackgroundVideo;
 					infoVideoVisible = infoVideo != null;
 
-					var briefing = WidgetUtils.WrapText(missionData.Briefing.Replace("\\n", "\n"), description.Bounds.Width, descriptionFont);
+					var briefing = WidgetUtils.WrapText(missionData.Briefing?.Replace("\\n", "\n"), description.Bounds.Width, descriptionFont);
 					var height = descriptionFont.Measure(briefing).Y;
 					Game.RunAfterTick(() =>
 					{
@@ -330,10 +358,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		{
 			if (!modData.DefaultFileSystem.Exists(video))
 			{
-				ConfirmationDialogs.ButtonPrompt(
-					title: "Video not installed",
-					text: "The game videos can be installed from the\n\"Manage Content\" menu in the mod chooser.",
-					cancelText: "Back",
+				ConfirmationDialogs.ButtonPrompt(modData,
+					title: NoVideoTitle,
+					text: NoVideoPrompt,
+					cancelText: NoVideoCancel,
 					onCancel: () => { });
 			}
 			else
@@ -343,15 +371,28 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				playingVideo = pv;
 				player.Load(video);
 
-				// video playback runs asynchronously
-				player.PlayThen(() =>
+				if (player.Video == null)
 				{
 					StopVideo(player);
-					onComplete?.Invoke();
-				});
 
-				// Mute other distracting sounds
-				MuteSounds();
+					ConfirmationDialogs.ButtonPrompt(modData,
+						title: CantPlayTitle,
+						text: CantPlayPrompt,
+						cancelText: CantPlayCancel,
+						onCancel: () => { });
+				}
+				else
+				{
+					// video playback runs asynchronously
+					player.PlayThen(() =>
+					{
+						StopVideo(player);
+						onComplete?.Invoke();
+					});
+
+					// Mute other distracting sounds
+					MuteSounds();
+				}
 			}
 		}
 
@@ -370,7 +411,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			StopVideo(videoPlayer);
 
 			// If selected mission becomes unavailable, exit MissionBrowser to refresh
-			if (modData.MapCache[selectedMap.Uid].Status != MapStatus.Available)
+			var map = modData.MapCache.GetUpdatedMap(selectedMap.Uid);
+			if (map == null)
 			{
 				Game.Disconnect();
 				Ui.CloseWindow();
@@ -378,6 +420,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				return;
 			}
 
+			selectedMap = modData.MapCache[map];
 			var orders = new List<Order>();
 			if (difficulty != null)
 				orders.Add(Order.Command($"option difficulty {difficulty}"));

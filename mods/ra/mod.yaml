@@ -226,6 +226,8 @@ MapGrid:
 	TileSize: 24,24
 	Type: Rectangular
 
+DefaultOrderGenerator: UnitOrderGenerator
+
 SupportsMapsFrom: ra
 
 SoundFormats: Aud, Wav
@@ -247,7 +249,7 @@ ModelSequenceFormat: PlaceholderModelSequence
 
 AssetBrowser:
 	SpriteExtensions: .shp, .tmp, .tem, .des, .sno, .int
-	AudioExtensions: .aud, .wav
+	AudioExtensions: .aud, .wav, .r00, .r01, .r02, .r03, .v00, .v01, .v02, .v03
 	VideoExtensions: .vqa, .wsa
 
 GameSpeeds:

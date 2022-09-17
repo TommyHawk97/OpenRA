@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -131,6 +131,12 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 	public class RegisteredProfileTooltipLogic : ChromeLogic
 	{
+		[TranslationReference]
+		static readonly string LoadingPlayerProfile = "loading-player-profile";
+
+		[TranslationReference]
+		static readonly string LoadingPlayerProfileFailed = "loading-player-profile-failed";
+
 		readonly PlayerDatabase playerDatabase;
 		PlayerProfile profile;
 		bool profileLoaded;
@@ -154,7 +160,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 			var profileWidth = 0;
 			var maxProfileWidth = widget.Bounds.Width;
-			var messageText = "Loading player profile...";
+			var messageText = modData.Translation.GetString(LoadingPlayerProfile);
 			var messageWidth = messageFont.Measure(messageText).X + 2 * message.Bounds.Left;
 
 			Task.Run(async () =>
@@ -211,9 +217,9 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 							{
 								var badges = Ui.LoadWidget("PLAYER_PROFILE_BADGES_INSERT", badgeContainer, new WidgetArgs()
 								{
-									{ "worldRenderer", worldRenderer },
-									{ "profile", profile },
-									{ "negotiateWidth", negotiateWidth }
+									{ nameof(worldRenderer), worldRenderer },
+									{ nameof(profile), profile },
+									{ nameof(negotiateWidth), negotiateWidth }
 								});
 
 								if (badges.Bounds.Height > 0)
@@ -236,13 +242,14 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				}
 				catch (Exception e)
 				{
-					Log.Write("debug", "Failed to parse player data result with exception: {0}", e);
+					Log.Write("debug", "Failed to parse player data result with exception");
+					Log.Write("debug", e);
 				}
 				finally
 				{
 					if (profile == null)
 					{
-						messageText = "Failed to load player profile.";
+						messageText = modData.Translation.GetString(LoadingPlayerProfileFailed);
 						messageWidth = messageFont.Measure(messageText).X + 2 * message.Bounds.Left;
 						header.Bounds.Width = widget.Bounds.Width = messageWidth;
 					}

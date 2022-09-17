@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Reflection;
 using OpenRA.GameRules;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
@@ -67,9 +68,26 @@ namespace OpenRA.Mods.Common
 		/// </summary>
 		public static int IndexFacing(WAngle facing, int numFrames)
 		{
+			// 1024 here is the max angle, so we divide the max angle by the total number of facings (numFrames)
 			var step = 1024 / numFrames;
 			var a = (facing.Angle + step / 2) & 1023;
 			return a / step;
+		}
+
+		/// <summary>
+		/// Returns the remainder angle after rounding to the nearest whole step / facing
+		/// </summary>
+		public static WAngle AngleDiffToStep(WAngle facing, int numFrames)
+		{
+			var step = 1024 / numFrames;
+			var a = (facing.Angle + step / 2) & 1023;
+			return new WAngle(a % step - step / 2);
+		}
+
+		public static WAngle GetInterpolatedFacing(WAngle facing, int facings, int interpolatedFacings)
+		{
+			var step = 1024 / interpolatedFacings;
+			return new WAngle(AngleDiffToStep(facing, facings).Angle / step * step);
 		}
 
 		/// <summary>Rounds the given facing value to the nearest quantized step.</summary>
@@ -209,15 +227,25 @@ namespace OpenRA.Mods.Common
 			return random.Next(range[0], range[1]);
 		}
 
+		public static string InternalTypeName(Type t)
+		{
+			return t.IsGenericType
+				? $"{t.Name.Substring(0, t.Name.IndexOf('`'))}<{string.Join(", ", t.GenericTypeArguments.Select(arg => arg.Name))}>"
+				: t.Name;
+		}
+
 		public static string FriendlyTypeName(Type t)
 		{
+			if (t.IsEnum)
+				return $"{t.Name} (enum)";
+
 			if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(HashSet<>))
 				return $"Set of {t.GetGenericArguments().Select(FriendlyTypeName).First()}";
 
 			if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Dictionary<,>))
 			{
 				var args = t.GetGenericArguments().Select(FriendlyTypeName).ToArray();
-				return $"Dictionary with Key: {args[0]}, Value {args[1]}";
+				return $"Dictionary with Key: {args[0]}, Value: {args[1]}";
 			}
 
 			if (t.IsSubclassOf(typeof(Array)))
@@ -272,6 +300,23 @@ namespace OpenRA.Mods.Common
 				return "Warhead";
 
 			return t.Name;
+		}
+
+		public static string GetAttributeParameterValue(CustomAttributeTypedArgument value)
+		{
+			if (value.ArgumentType.IsEnum)
+				return Enum.Parse(value.ArgumentType, value.Value.ToString()).ToString();
+
+			if (value.ArgumentType == typeof(Type) && value.Value != null)
+				return (value.Value as Type).Name;
+
+			if (value.ArgumentType.IsArray)
+			{
+				var names = (value.Value as IReadOnlyCollection<CustomAttributeTypedArgument>).Select(x => (x.Value as Type).Name);
+				return string.Join(", ", names);
+			}
+
+			return value.Value?.ToString();
 		}
 
 		public static int GetProjectileInaccuracy(int baseInaccuracy, InaccuracyType inaccuracyType, ProjectileArgs args)

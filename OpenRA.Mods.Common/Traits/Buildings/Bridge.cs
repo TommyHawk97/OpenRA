@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -22,7 +22,7 @@ using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
 {
-	class BridgeInfo : TraitInfo, IRulesetLoaded, Requires<HealthInfo>, Requires<BuildingInfo>
+	public class BridgeInfo : TraitInfo, IRulesetLoaded, Requires<HealthInfo>, Requires<BuildingInfo>
 	{
 		public readonly bool Long = false;
 
@@ -93,7 +93,7 @@ namespace OpenRA.Mods.Common.Traits
 		}
 	}
 
-	class Bridge : IRender, INotifyDamageStateChanged, IRadarSignature
+	public class Bridge : IRender, INotifyDamageStateChanged, IRadarSignature
 	{
 		readonly BuildingInfo buildingInfo;
 		readonly Bridge[] neighbours = new Bridge[2];
@@ -322,11 +322,6 @@ namespace OpenRA.Mods.Common.Traits
 				self.World.Map.CustomTerrain[c] = tileInfo.TerrainType;
 				radarSignature[i++] = (c, tileInfo.GetColor(self.World.LocalRandom));
 			}
-
-			// If this bridge repair operation connects two pathfinding domains,
-			// update the domain index.
-			var domainIndex = self.World.WorldActor.Trait<DomainIndex>();
-			domainIndex.UpdateCells(self.World, footprint.Keys);
 
 			if (LongBridgeSegmentIsDead() && !killedUnits)
 			{

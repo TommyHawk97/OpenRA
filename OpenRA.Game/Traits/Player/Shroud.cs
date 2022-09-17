@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -83,7 +83,10 @@ namespace OpenRA.Traits
 			}
 		}
 
-		readonly Actor self;
+		// Visible is not a super set of Explored. IsExplored may return false even if IsVisible returns true.
+		[Flags]
+		public enum CellVisibility : byte { Hidden = 0x0, Explored = 0x1, Visible = 0x2 }
+
 		readonly ShroudInfo info;
 		readonly Map map;
 
@@ -101,6 +104,7 @@ namespace OpenRA.Traits
 		// Per-cell cache of the resolved cell type (shroud/fog/visible)
 		readonly ProjectedCellLayer<ShroudCellType> resolvedType;
 
+		bool disabledChanged;
 		[Sync]
 		bool disabled;
 		public bool Disabled
@@ -113,6 +117,7 @@ namespace OpenRA.Traits
 					return;
 
 				disabled = value;
+				disabledChanged = true;
 			}
 		}
 
@@ -128,7 +133,6 @@ namespace OpenRA.Traits
 
 		public Shroud(Actor self, ShroudInfo info)
 		{
-			this.self = self;
 			this.info = info;
 			map = self.World.Map;
 
@@ -155,13 +159,16 @@ namespace OpenRA.Traits
 
 		void ITick.Tick(Actor self)
 		{
-			if (!anyCellTouched)
+			if (!anyCellTouched && !disabledChanged)
 				return;
 
 			anyCellTouched = false;
 
 			if (OnShroudChanged == null)
+			{
+				disabledChanged = false;
 				return;
+			}
 
 			// PERF: Parts of this loop are very hot.
 			// We loop over the direct index that represents the PPos in
@@ -171,7 +178,7 @@ namespace OpenRA.Traits
 			for (var index = 0; index < maxIndex; index++)
 			{
 				// PERF: Most cells are not touched
-				if (!touched[index])
+				if (!touched[index] && !disabledChanged)
 					continue;
 
 				touched[index] = false;
@@ -192,16 +199,17 @@ namespace OpenRA.Traits
 
 				// PERF: Most cells are unchanged
 				var oldResolvedType = resolvedType[index];
-				if (type != oldResolvedType)
+				if (type != oldResolvedType || disabledChanged)
 				{
 					resolvedType[index] = type;
-					var uv = touched.PPosFromIndex(index);
-					if (map.Contains(uv))
-						OnShroudChanged(uv);
+					var puv = touched.PPosFromIndex(index);
+					if (map.Contains(puv))
+						OnShroudChanged(puv);
 				}
 			}
 
 			Hash = Sync.HashPlayer(self.Owner) + self.World.WorldTick;
+			disabledChanged = false;
 		}
 
 		public static IEnumerable<PPos> ProjectedCellsInRange(Map map, WPos pos, WDist minRange, WDist maxRange, int maxHeightDelta = -1)
@@ -422,6 +430,59 @@ namespace OpenRA.Traits
 			// Check that uv is inside the map area. There is nothing special
 			// about explored here: any of the CellLayers would have been suitable.
 			return explored.Contains(uv);
+		}
+
+		public CellVisibility GetVisibility(WPos pos)
+		{
+			return GetVisibility(map.ProjectedCellCovering(pos));
+		}
+
+		// PERF: Combine IsExplored and IsVisible.
+		public CellVisibility GetVisibility(PPos puv)
+		{
+			var state = CellVisibility.Hidden;
+
+			if (Disabled)
+			{
+				if (fogEnabled)
+				{
+					// Shroud disabled, Fog enabled
+					if (resolvedType.Contains(puv))
+					{
+						state |= CellVisibility.Explored;
+
+						if (resolvedType[puv] == ShroudCellType.Visible)
+							state |= CellVisibility.Visible;
+					}
+				}
+				else if (map.Contains(puv))
+					state |= CellVisibility.Explored | CellVisibility.Visible;
+			}
+			else
+			{
+				if (fogEnabled)
+				{
+					// Shroud and Fog enabled
+					if (resolvedType.Contains(puv))
+					{
+						var rt = resolvedType[puv];
+						if (rt == ShroudCellType.Visible)
+							state |= CellVisibility.Explored | CellVisibility.Visible;
+						else if (rt > ShroudCellType.Shroud)
+							state |= CellVisibility.Explored;
+					}
+				}
+				else if (resolvedType.Contains(puv))
+				{
+					// We do not set Explored since IsExplored may return false.
+					state |= CellVisibility.Visible;
+
+					if (resolvedType[puv] > ShroudCellType.Shroud)
+						state |= CellVisibility.Explored;
+				}
+			}
+
+			return state;
 		}
 	}
 }

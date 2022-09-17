@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -103,7 +103,16 @@ namespace OpenRA
 		public bool EnableLintChecks = true;
 
 		[Desc("Delay in milliseconds before newly joined players can send chat messages.")]
-		public int JoinChatDelay = 5000;
+		public int FloodLimitJoinCooldown = 5000;
+
+		[Desc("Amount of miliseconds player chat messages are tracked for.")]
+		public int FloodLimitInterval = 5000;
+
+		[Desc("Amount of chat messages per FloodLimitInterval a players can send before flood is detected.")]
+		public int FloodLimitMessageCount = 5;
+
+		[Desc("Delay in milliseconds before players can send chat messages after flood was detected.")]
+		public int FloodLimitCooldown = 15000;
 
 		public ServerSettings Clone()
 		{
@@ -183,6 +192,9 @@ namespace OpenRA
 		[Desc("At which frames per second to cap the framerate.")]
 		public int MaxFramerate = 60;
 
+		[Desc("Set a frame rate limit of 1 render frame per game simulation frame (overrides CapFramerate/MaxFramerate).")]
+		public bool CapFramerateToGameFps = false;
+
 		[Desc("Disable the OpenGL debug message callback feature.")]
 		public bool DisableGLDebugMessageCallback = false;
 
@@ -250,6 +262,8 @@ namespace OpenRA
 
 		public bool UseClassicMouseStyle = false;
 		public bool UseAlternateScrollButton = false;
+
+		public bool HideReplayChat = false;
 
 		public StatusBarsType StatusBars = StatusBarsType.Standard;
 		public TargetLinesType TargetLines = TargetLinesType.Manual;

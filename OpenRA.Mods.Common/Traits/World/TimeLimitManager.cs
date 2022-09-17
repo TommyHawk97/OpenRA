@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -95,7 +95,6 @@ namespace OpenRA.Mods.Common.Traits
 	{
 		readonly TimeLimitManagerInfo info;
 		readonly int ticksPerSecond;
-		MapOptions mapOptions;
 		LabelWidget countdownLabel;
 		CachedTransform<int, string> countdown;
 		int ticksRemaining;
@@ -119,7 +118,6 @@ namespace OpenRA.Mods.Common.Traits
 
 		void IWorldLoaded.WorldLoaded(World w, OpenRA.Graphics.WorldRenderer wr)
 		{
-			mapOptions = w.WorldActor.Trait<MapOptions>();
 			if (string.IsNullOrWhiteSpace(info.CountdownLabel) || string.IsNullOrWhiteSpace(info.CountdownText))
 				return;
 
@@ -160,7 +158,7 @@ namespace OpenRA.Mods.Common.Traits
 				{
 					TextNotificationsManager.AddSystemLine(Notification.F(m, m > 1 ? "s" : null));
 
-					var faction = self.World.LocalPlayer == null ? null : self.World.LocalPlayer.Faction.InternalName;
+					var faction = self.World.LocalPlayer?.Faction.InternalName;
 					Game.Sound.PlayNotification(self.World.Map.Rules, self.World.LocalPlayer, "Speech", info.TimeLimitWarnings[m], faction);
 				}
 			}

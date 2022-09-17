@@ -31,6 +31,16 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		readonly ScrollPanelWidget newsPanel;
 		readonly Widget newsTemplate;
 		readonly LabelWidget newsStatus;
+		readonly ModData modData;
+
+		[TranslationReference]
+		static readonly string LoadingNews = "loading-news";
+
+		[TranslationReference("message")]
+		static readonly string NewsRetrivalFailed = "news-retrival-failed";
+
+		[TranslationReference("message")]
+		static readonly string NewsParsingFailed = "news-parsing-failed";
 
 		// Update news once per game launch
 		static bool fetchedNews;
@@ -52,6 +62,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		[ObjectCreator.UseCtor]
 		public MainMenuLogic(Widget widget, World world, ModData modData)
 		{
+			this.modData = modData;
+
 			rootMenu = widget;
 			rootMenu.Get<LabelWidget>("VERSION_LABEL").Text = modData.Manifest.Metadata.Version;
 
@@ -92,7 +104,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			singleplayerMenu.IsVisible = () => menuType == MenuType.Singleplayer;
 
 			var missionsButton = singleplayerMenu.Get<ButtonWidget>("MISSIONS_BUTTON");
-			missionsButton.OnClick = OpenMissionBrowserPanel;
+			missionsButton.OnClick = () => OpenMissionBrowserPanel(modData.MapCache.PickLastModifiedMap(MapVisibility.MissionSelector));
 
 			var hasCampaign = modData.Manifest.Missions.Length > 0;
 			var hasMissions = modData.MapCache
@@ -108,6 +120,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			var loadButton = singleplayerMenu.Get<ButtonWidget>("LOAD_BUTTON");
 			loadButton.IsDisabled = () => !GameSaveBrowserLogic.IsLoadPanelEnabled(modData.Manifest);
 			loadButton.OnClick = OpenGameSaveBrowserPanel;
+
+			var encyclopediaButton = singleplayerMenu.GetOrNull<ButtonWidget>("ENCYCLOPEDIA_BUTTON");
+			if (encyclopediaButton != null)
+				encyclopediaButton.OnClick = OpenEncyclopediaPanel;
 
 			singleplayerMenu.Get<ButtonWidget>("BACK_BUTTON").OnClick = () => SwitchMenu(MenuType.Main);
 
@@ -205,7 +221,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				newsPanel.RemoveChild(newsTemplate);
 
 				newsStatus = newsPanel.Get<LabelWidget>("NEWS_STATUS");
-				SetNewsStatus("Loading news");
+				SetNewsStatus(modData.Translation.GetString(LoadingNews));
 			}
 
 			Game.OnRemoteDirectConnect += OnRemoteDirectConnect;
@@ -291,8 +307,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 								var url = new HttpQueryBuilder(webServices.GameNews)
 								{
 									{ "version", Game.EngineVersion },
-									{ "mod", Game.ModData.Manifest.Id },
-									{ "modversion", Game.ModData.Manifest.Metadata.Version }
+									{ "mod", modData.Manifest.Id },
+									{ "modversion", modData.Manifest.Metadata.Version }
 								}.ToString();
 
 								// Parameter string is blank if the player has opted out
@@ -318,7 +334,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 							{
 								Game.RunAfterTick(() => // run on the main thread
 								{
-									SetNewsStatus($"Failed to retrieve news: {e.Message}");
+									SetNewsStatus(modData.Translation.GetString(NewsRetrivalFailed, Translation.Arguments("message", e.Message)));
 								});
 							}
 						});
@@ -346,7 +362,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			});
 		}
 
-		void LoadMapIntoEditor(string uid)
+		static void LoadMapIntoEditor(string uid)
 		{
 			Game.LoadEditor(uid);
 
@@ -390,7 +406,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			}
 			catch (Exception ex)
 			{
-				SetNewsStatus($"Failed to parse news: {ex.Message}");
+				SetNewsStatus(modData.Translation.GetString(NewsParsingFailed, Translation.Arguments("message", ex.Message)));
 			}
 
 			return null;
@@ -433,7 +449,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 		void StartSkirmishGame()
 		{
-			var map = Game.ModData.MapCache.ChooseInitialMap(Game.Settings.Server.Map, Game.CosmeticRandom);
+			var map = modData.MapCache.ChooseInitialMap(modData.MapCache.PickLastModifiedMap(MapVisibility.Lobby) ?? Game.Settings.Server.Map, Game.CosmeticRandom);
 			Game.Settings.Server.Map = map;
 			Game.Settings.Save();
 
@@ -443,13 +459,23 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				() => { Game.CloseServer(); SwitchMenu(MenuType.Main); });
 		}
 
-		void OpenMissionBrowserPanel()
+		void OpenMissionBrowserPanel(string map)
 		{
 			SwitchMenu(MenuType.None);
 			Game.OpenWindow("MISSIONBROWSER_PANEL", new WidgetArgs
 			{
 				{ "onExit", () => SwitchMenu(MenuType.Singleplayer) },
-				{ "onStart", () => { RemoveShellmapUI(); lastGameState = MenuPanel.Missions; } }
+				{ "onStart", () => { RemoveShellmapUI(); lastGameState = MenuPanel.Missions; } },
+				{ "initialMap", map }
+			});
+		}
+
+		void OpenEncyclopediaPanel()
+		{
+			SwitchMenu(MenuType.None);
+			Game.OpenWindow("ENCYCLOPEDIA_PANEL", new WidgetArgs
+			{
+				{ "onExit", () => SwitchMenu(MenuType.Singleplayer) }
 			});
 		}
 
@@ -514,7 +540,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			switch (lastGameState)
 			{
 				case MenuPanel.Missions:
-					OpenMissionBrowserPanel();
+					OpenMissionBrowserPanel(null);
 					break;
 
 				case MenuPanel.Replays:

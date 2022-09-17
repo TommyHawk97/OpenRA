@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -8,9 +8,6 @@
  * information, see COPYING.
  */
 #endregion
-
-using System;
-using System.Linq;
 
 namespace OpenRA.Scripting
 {
@@ -25,15 +22,7 @@ namespace OpenRA.Scripting
 			: base(context)
 		{
 			this.player = player;
-
-			var args = new object[] { context, player };
-			var objects = context.PlayerCommands.Select(cg =>
-			{
-				var groupCtor = cg.GetConstructor(new Type[] { typeof(ScriptContext), typeof(Player) });
-				return groupCtor.Invoke(args);
-			});
-
-			Bind(objects);
+			Bind(CreateObjects(context.PlayerCommands, new object[] { context, player }));
 		}
 	}
 }

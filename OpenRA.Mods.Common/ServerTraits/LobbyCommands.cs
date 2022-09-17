@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -32,6 +32,9 @@ namespace OpenRA.Mods.Common.Server
 
 		[TranslationReference]
 		static readonly string NoStartUntilRequiredSlotsFull = "no-start-until-required-slots-full";
+
+		[TranslationReference]
+		static readonly string NoStartWithoutPlayers = "no-start-without-players";
 
 		[TranslationReference]
 		static readonly string TwoHumansRequired = "two-humans-required";
@@ -109,7 +112,7 @@ namespace OpenRA.Mods.Common.Server
 		static readonly string ChangedMap = "changed-map";
 
 		[TranslationReference]
-		static readonly string BotsDisabled = "bots-disabled";
+		static readonly string MapBotsDisabled = "map-bots-disabled";
 
 		[TranslationReference("player", "name", "value")]
 		static readonly string ValueChanged = "value-changed";
@@ -252,6 +255,26 @@ namespace OpenRA.Mods.Common.Server
 				if (server.LobbyInfo.Slots.Any(sl => sl.Value.Required && server.LobbyInfo.ClientInSlot(sl.Key) == null))
 					return;
 
+				// Don't start without any players
+				if (server.LobbyInfo.Slots.All(sl => server.LobbyInfo.ClientInSlot(sl.Key) == null))
+					return;
+
+				// Does the host have the map installed?
+				if (server.Type != ServerType.Dedicated && server.ModData.MapCache[server.Map.Uid].Status != MapStatus.Available)
+				{
+					// Client 0 will always be the Host
+					// In some cases client 0 doesn't exist, so we untick all players
+					var host = server.LobbyInfo.Clients.FirstOrDefault(c => c.Index == 0);
+					if (host != null)
+						host.State = Session.ClientState.NotReady;
+					else
+						foreach (var client in server.LobbyInfo.Clients)
+							client.State = Session.ClientState.NotReady;
+
+					server.SyncLobbyClients();
+					return;
+				}
+
 				if (LobbyUtils.InsufficientEnabledSpawnPoints(server.Map, server.LobbyInfo))
 					return;
 
@@ -286,26 +309,31 @@ namespace OpenRA.Mods.Common.Server
 			{
 				if (!client.IsAdmin)
 				{
-					server.SendOrderTo(conn, "Message", OnlyHostStartGame);
+					server.SendLocalizedMessageTo(conn, OnlyHostStartGame);
 					return true;
 				}
 
-				if (server.LobbyInfo.Slots.Any(sl => sl.Value.Required &&
-													 server.LobbyInfo.ClientInSlot(sl.Key) == null))
+				if (server.LobbyInfo.Slots.Any(sl => sl.Value.Required && server.LobbyInfo.ClientInSlot(sl.Key) == null))
 				{
-					server.SendOrderTo(conn, "Message", NoStartUntilRequiredSlotsFull);
+					server.SendLocalizedMessageTo(conn, NoStartUntilRequiredSlotsFull);
+					return true;
+				}
+
+				if (server.LobbyInfo.Slots.All(sl => server.LobbyInfo.ClientInSlot(sl.Key) == null))
+				{
+					server.SendOrderTo(conn, "Message", NoStartWithoutPlayers);
 					return true;
 				}
 
 				if (!server.LobbyInfo.GlobalSettings.EnableSingleplayer && server.LobbyInfo.NonBotPlayers.Count() < 2)
 				{
-					server.SendOrderTo(conn, "Message", TwoHumansRequired);
+					server.SendLocalizedMessageTo(conn, TwoHumansRequired);
 					return true;
 				}
 
 				if (LobbyUtils.InsufficientEnabledSpawnPoints(server.Map, server.LobbyInfo))
 				{
-					server.SendOrderTo(conn, "Message", InsufficientEnabledSpawnPoints);
+					server.SendLocalizedMessageTo(conn, InsufficientEnabledSpawnPoints);
 					return true;
 				}
 
@@ -612,7 +640,7 @@ namespace OpenRA.Mods.Common.Server
 						if (!server.LobbyInfo.GlobalSettings.EnableSingleplayer)
 							server.SendLocalizedMessage(TwoHumansRequired);
 						else if (server.Map.Players.Players.Where(p => p.Value.Playable).All(p => !p.Value.AllowBots))
-							server.SendLocalizedMessage(BotsDisabled);
+							server.SendLocalizedMessage(MapBotsDisabled);
 
 						var briefing = MissionBriefingOrDefault(server);
 						if (briefing != null)
@@ -773,14 +801,14 @@ namespace OpenRA.Mods.Common.Server
 				}
 
 				Log.Write("server", $"Kicking client {kickClientID}.");
-				server.SendLocalizedMessage(Kicked, Translation.Arguments("admin", client.Name, "client", kickClient.Name));
+				server.SendLocalizedMessage(Kicked, Translation.Arguments("admin", client.Name, "player", kickClient.Name));
 				server.SendOrderTo(kickConn, "ServerError", YouWereKicked);
 				server.DropClient(kickConn);
 
 				if (bool.TryParse(split[1], out var tempBan) && tempBan)
 				{
 					Log.Write("server", $"Temporarily banning client {kickClientID} ({kickClient.IPAddress}).");
-					server.SendLocalizedMessage(TempBan, Translation.Arguments("admin", client.Name, "client", kickClient.Name));
+					server.SendLocalizedMessage(TempBan, Translation.Arguments("admin", client.Name, "player", kickClient.Name));
 					server.TempBans.Add(kickClient.IPAddress);
 				}
 

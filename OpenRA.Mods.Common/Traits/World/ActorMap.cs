@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -248,8 +248,7 @@ namespace OpenRA.Mods.Common.Traits
 				{
 					current = node.Actor;
 					node = node.Next;
-					if (!current.Disposed)
-						return true;
+					return true;
 				}
 
 				return false;
@@ -284,7 +283,7 @@ namespace OpenRA.Mods.Common.Traits
 
 			var always = sub == SubCell.FullCell || sub == SubCell.Any;
 			for (var i = layer[uv]; i != null; i = i.Next)
-				if (!i.Actor.Disposed && (i.SubCell == sub || i.SubCell == SubCell.FullCell || always))
+				if (i.SubCell == sub || i.SubCell == SubCell.FullCell || always)
 					yield return i.Actor;
 		}
 
@@ -386,7 +385,7 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			var always = sub == SubCell.FullCell || sub == SubCell.Any;
 			for (var i = layer[uv]; i != null; i = i.Next)
-				if ((always || i.SubCell == sub || i.SubCell == SubCell.FullCell) && !i.Actor.Disposed && withCondition(i.Actor))
+				if ((always || i.SubCell == sub || i.SubCell == SubCell.FullCell) && withCondition(i.Actor))
 					return true;
 
 			return false;
@@ -401,6 +400,18 @@ namespace OpenRA.Mods.Common.Traits
 				return false;
 
 			return AnyActorsAt(uv, layer, sub, withCondition);
+		}
+
+		public IEnumerable<Actor> AllActors()
+		{
+			foreach (var layer in influence)
+			{
+				if (layer == null)
+					continue;
+				foreach (var node in layer)
+					for (var i = node; i != null; i = i.Next)
+						yield return i.Actor;
+			}
 		}
 
 		public void AddInfluence(Actor self, IOccupySpace ios)

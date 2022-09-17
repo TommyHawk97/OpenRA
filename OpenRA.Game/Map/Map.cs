@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -15,6 +15,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using OpenRA.FileFormats;
 using OpenRA.FileSystem;
 using OpenRA.Graphics;
@@ -151,6 +152,8 @@ namespace OpenRA
 	public class Map : IReadOnlyFileSystem
 	{
 		public const int SupportedMapFormat = 11;
+		public const int CurrentMapFormat = 12;
+		const short InvalidCachedTerrainIndex = -1;
 
 		/// <summary>Defines the order of the fields in map.yaml</summary>
 		static readonly MapField[] YamlFields =
@@ -253,6 +256,11 @@ namespace OpenRA
 
 		public static string ComputeUID(IReadOnlyPackage package)
 		{
+			return ComputeUID(package, GetMapFormat(package));
+		}
+
+		static string ComputeUID(IReadOnlyPackage package, int format)
+		{
 			// UID is calculated by taking an SHA1 of the yaml and binary data
 			var requiredFiles = new[] { "map.yaml", "map.bin" };
 			var contents = package.Contents.ToList();
@@ -264,7 +272,7 @@ namespace OpenRA
 			try
 			{
 				foreach (var filename in contents)
-					if (filename.EndsWith(".yaml") || filename.EndsWith(".bin") || filename.EndsWith(".lua"))
+					if (filename.EndsWith(".yaml") || filename.EndsWith(".bin") || filename.EndsWith(".lua") || (format >= 12 && filename == "map.png"))
 						streams.Add(package.GetStream(filename));
 
 				// Take the SHA1
@@ -282,6 +290,19 @@ namespace OpenRA
 				foreach (var stream in streams)
 					stream.Dispose();
 			}
+		}
+
+		static int GetMapFormat(IReadOnlyPackage p)
+		{
+			foreach (var line in p.GetStream("map.yaml").ReadAllLines())
+			{
+				// PERF This is a way to get MapFormat without expensive yaml parsing
+				var search = Regex.Match(line, "^MapFormat:\\s*(\\d*)\\s*$");
+				if (search.Success && search.Groups.Count > 0)
+					return FieldLoader.GetValue<int>("MapFormat", search.Groups[1].Value);
+			}
+
+			throw new InvalidDataException($"MapFormat is not definedt\n File: {p.Name}");
 		}
 
 		/// <summary>
@@ -331,7 +352,7 @@ namespace OpenRA
 			foreach (var field in YamlFields)
 				field.Deserialize(this, yaml.Nodes);
 
-			if (MapFormat != SupportedMapFormat)
+			if (MapFormat < SupportedMapFormat)
 				throw new InvalidDataException($"Map format {MapFormat} is not supported.\n File: {package.Name}");
 
 			PlayerDefinitions = MiniYaml.NodesOrEmpty(yaml, "Players");
@@ -399,7 +420,7 @@ namespace OpenRA
 
 			PostInit();
 
-			Uid = ComputeUID(Package);
+			Uid = ComputeUID(Package, MapFormat);
 		}
 
 		void PostInit()
@@ -448,6 +469,19 @@ namespace OpenRA
 			}
 
 			AllEdgeCells = UpdateEdgeCells();
+
+			// Invalidate the entry for a cell if anything could cause the terrain index to change.
+			Action<CPos> invalidateTerrainIndex = c =>
+			{
+				if (cachedTerrainIndexes != null)
+					cachedTerrainIndexes[c] = InvalidCachedTerrainIndex;
+			};
+
+			// Even though the cache is lazily initialized, we must attach these event handlers on init.
+			// This ensures our handler to invalidate the cache runs first,
+			// so other listeners to these same events will get correct data when calling GetTerrainIndex.
+			CustomTerrain.CellEntryChanged += invalidateTerrainIndex;
+			Tiles.CellEntryChanged += invalidateTerrainIndex;
 		}
 
 		void UpdateRamp(CPos cell)
@@ -586,7 +620,7 @@ namespace OpenRA
 
 		public void Save(IReadWritePackage toPackage)
 		{
-			MapFormat = SupportedMapFormat;
+			MapFormat = CurrentMapFormat;
 
 			var root = new List<MiniYamlNode>();
 			foreach (var field in YamlFields)
@@ -611,7 +645,7 @@ namespace OpenRA
 			Package = toPackage;
 
 			// Update UID to match the newly saved data
-			Uid = ComputeUID(toPackage);
+			Uid = ComputeUID(toPackage, MapFormat);
 		}
 
 		public byte[] SaveBinaryData()
@@ -879,7 +913,7 @@ namespace OpenRA
 			// (c) u, v coordinates run diagonally to the cell axes, and we define
 			//     1024 as the length projected onto the primary cell axis
 			//  - 512 * sqrt(2) = 724
-			var z = Height.Contains(cell) ? 724 * Height[cell] + Grid.Ramps[Ramp[cell]].CenterHeightOffset : 0;
+			var z = Height.TryGetValue(cell, out var height) ? 724 * height + Grid.Ramps[Ramp[cell]].CenterHeightOffset : 0;
 			return new WPos(724 * (cell.X - cell.Y + 1), 724 * (cell.X + cell.Y + 1), z);
 		}
 
@@ -890,8 +924,7 @@ namespace OpenRA
 			{
 				var center = CenterOfCell(cell);
 				var offset = Grid.SubCellOffsets[index];
-				var ramp = Ramp.Contains(cell) ? Ramp[cell] : 0;
-				if (ramp != 0)
+				if (Ramp.TryGetValue(cell, out var ramp) && ramp != 0)
 				{
 					var r = Grid.Ramps[ramp];
 					offset += new WVec(0, 0, r.HeightOffset(offset.X, offset.Y) - r.CenterHeightOffset);
@@ -912,11 +945,7 @@ namespace OpenRA
 			var cell = CellContaining(pos);
 			var offset = pos - CenterOfCell(cell);
 
-			if (!Ramp.Contains(cell))
-				return new WDist(offset.Z);
-
-			var ramp = Ramp[cell];
-			if (ramp != 0)
+			if (Ramp.TryGetValue(cell, out var ramp) && ramp != 0)
 			{
 				var r = Grid.Ramps[ramp];
 				return new WDist(offset.Z + r.CenterHeightOffset - r.HeightOffset(offset.X, offset.Y));
@@ -927,10 +956,10 @@ namespace OpenRA
 
 		public WRot TerrainOrientation(CPos cell)
 		{
-			if (!Ramp.Contains(cell))
-				return WRot.None;
+			if (Ramp.TryGetValue(cell, out var ramp))
+				return Grid.Ramps[ramp].Orientation;
 
-			return Grid.Ramps[Ramp[cell]].Orientation;
+			return WRot.None;
 		}
 
 		public WVec Offset(CVec delta, int dz)
@@ -1074,18 +1103,11 @@ namespace OpenRA
 
 		public byte GetTerrainIndex(CPos cell)
 		{
-			const short InvalidCachedTerrainIndex = -1;
-
 			// Lazily initialize a cache for terrain indexes.
 			if (cachedTerrainIndexes == null)
 			{
 				cachedTerrainIndexes = new CellLayer<short>(this);
 				cachedTerrainIndexes.Clear(InvalidCachedTerrainIndex);
-
-				// Invalidate the entry for a cell if anything could cause the terrain index to change.
-				Action<CPos> invalidateTerrainIndex = c => cachedTerrainIndexes[c] = InvalidCachedTerrainIndex;
-				CustomTerrain.CellEntryChanged += invalidateTerrainIndex;
-				Tiles.CellEntryChanged += invalidateTerrainIndex;
 			}
 
 			var uv = cell.ToMPos(this);
@@ -1366,12 +1388,12 @@ namespace OpenRA
 			return false;
 		}
 
-		public string Translate(string key, IDictionary<string, object> args = null, string attribute = null)
+		public string Translate(string key, IDictionary<string, object> args = null)
 		{
-			if (Translation.GetFormattedMessage(key, args, attribute) == key)
-				return modData.Translation.GetFormattedMessage(key, args, attribute);
+			if (Translation.TryGetString(key, out var message, args))
+				return message;
 
-			return Translation.GetFormattedMessage(key, args, attribute);
+			return modData.Translation.GetString(key, args);
 		}
 	}
 }

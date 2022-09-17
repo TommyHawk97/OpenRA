@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -24,6 +24,16 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 {
 	public class AssetBrowserLogic : ChromeLogic
 	{
+		[Flags]
+		enum AssetType
+		{
+			Sprite = 1,
+			Model = 2,
+			Audio = 4,
+			Video = 8,
+			Unknown = 16
+		}
+
 		readonly string[] allowedExtensions;
 		readonly string[] allowedSpriteExtensions;
 		readonly string[] allowedModelExtensions;
@@ -59,6 +69,15 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		WRot modelOrientation;
 		float spriteScale;
 		float modelScale;
+		AssetType assetTypesToDisplay = AssetType.Sprite | AssetType.Model | AssetType.Audio | AssetType.Video;
+
+		[TranslationReference("length")]
+		static readonly string LengthInSeconds = "length-in-seconds";
+
+		[TranslationReference]
+		static readonly string AllPackages = "all-packages";
+
+		readonly string allPackages;
 
 		[ObjectCreator.UseCtor]
 		public AssetBrowserLogic(Widget widget, Action onExit, ModData modData, WorldRenderer worldRenderer)
@@ -66,6 +85,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			world = worldRenderer.World;
 			this.modData = modData;
 			panel = widget;
+
+			allPackages = modData.Translation.GetString(AllPackages);
 
 			var colorPickerPalettes = world.WorldActor.TraitsImplementing<IProvidesAssetBrowserColorPickerPalettes>()
 				.SelectMany(p => p.ColorPickerPaletteNames)
@@ -94,10 +115,21 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				sourceDropdown.GetText = () => sourceName.Update(assetSource);
 			}
 
+			var assetTypeDropdown = panel.GetOrNull<DropDownButtonWidget>("ASSET_TYPES_DROPDOWN");
+			if (assetTypeDropdown != null)
+			{
+				var assetTypesPanel = CreateAssetTypesPanel();
+				assetTypeDropdown.OnMouseDown = _ =>
+				{
+					assetTypeDropdown.RemovePanel();
+					assetTypeDropdown.AttachPanel(assetTypesPanel);
+				};
+			}
+
 			var spriteWidget = panel.GetOrNull<SpriteWidget>("SPRITE");
 			if (spriteWidget != null)
 			{
-				spriteWidget.GetSprite = () => currentSprites != null ? currentSprites[currentFrame] : null;
+				spriteWidget.GetSprite = () => currentSprites?[currentFrame];
 				currentPalette = spriteWidget.Palette;
 				spriteScale = spriteWidget.Scale;
 				spriteWidget.GetPalette = () => currentPalette;
@@ -194,13 +226,15 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			var frameText = panel.GetOrNull<LabelWidget>("FRAME_COUNT");
 			if (frameText != null)
 			{
+				var soundLength = new CachedTransform<int, string>(p =>
+					modData.Translation.GetString(LengthInSeconds, Translation.Arguments("length", p)));
 				frameText.GetText = () =>
 				{
 					if (isVideoLoaded)
 						return $"{player.Video.CurrentFrameIndex + 1} / {player.Video.FrameCount}";
 
 					if (currentSoundFormat != null)
-						return $"{Math.Round(currentSoundFormat.LengthInSeconds, 3)} sec";
+						return soundLength.Update((int)currentSoundFormat.LengthInSeconds);
 
 					return $"{currentFrame} / {currentSprites.Length - 1}";
 				};
@@ -394,7 +428,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			if (string.IsNullOrWhiteSpace(filter))
 				return true;
 
-			if (filename.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0)
+			if (filename.Contains(filter, StringComparison.OrdinalIgnoreCase))
 				return true;
 
 			return false;
@@ -425,12 +459,18 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 			item.IsVisible = () =>
 			{
+				var allowed = (assetTypesToDisplay.HasFlag(AssetType.Sprite) && allowedSpriteExtensions.Any(ext => filepath.EndsWith(ext, true, CultureInfo.InvariantCulture)))
+					|| (assetTypesToDisplay.HasFlag(AssetType.Model) && allowedModelExtensions.Any(ext => filepath.EndsWith(ext, true, CultureInfo.InvariantCulture)))
+					|| (assetTypesToDisplay.HasFlag(AssetType.Audio) && allowedAudioExtensions.Any(ext => filepath.EndsWith(ext, true, CultureInfo.InvariantCulture)))
+					|| (assetTypesToDisplay.HasFlag(AssetType.Video) && allowedVideoExtensions.Any(ext => filepath.EndsWith(ext, true, CultureInfo.InvariantCulture)))
+					|| (assetTypesToDisplay.HasFlag(AssetType.Unknown) && !allowedExtensions.Any(ext => filepath.EndsWith(ext, true, CultureInfo.InvariantCulture)));
+
 				if (assetVisByName.TryGetValue(filepath, out var visible))
-					return visible;
+					return visible && allowed;
 
 				visible = FilterAsset(filepath);
 				assetVisByName.Add(filepath, visible);
-				return visible;
+				return visible && allowed;
 			};
 
 			list.AddChild(item);
@@ -524,11 +564,12 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				else
 					return false;
 			}
-			catch (Exception ex)
+			catch (Exception exception)
 			{
 				isLoadError = true;
 				Log.AddChannel("assetbrowser", "assetbrowser.log");
-				Log.Write("assetbrowser", "Error reading {0}:{3} {1}{3}{2}", filename, ex.Message, ex.StackTrace, Environment.NewLine);
+				Log.Write("assetbrowser", $"Error reading {filename}");
+				Log.Write("assetbrowser", exception);
 
 				return false;
 			}
@@ -539,7 +580,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		bool ShowSourceDropdown(DropDownButtonWidget dropdown)
 		{
 			var sourceName = new CachedTransform<IReadOnlyPackage, string>(GetSourceDisplayName);
-			Func<IReadOnlyPackage, ScrollItemWidget, ScrollItemWidget> setupItem = (source, itemTemplate) =>
+			ScrollItemWidget SetupItem(IReadOnlyPackage source, ScrollItemWidget itemTemplate)
 			{
 				var item = ScrollItemWidget.Setup(itemTemplate,
 					() => assetSource == source,
@@ -547,10 +588,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 				item.Get<LabelWidget>("LABEL").GetText = () => sourceName.Update(source);
 				return item;
-			};
+			}
 
 			var sources = new[] { (IReadOnlyPackage)null }.Concat(acceptablePackages);
-			dropdown.ShowDropDown("LABEL_DROPDOWN_TEMPLATE", 280, sources, setupItem);
+			dropdown.ShowDropDown("LABEL_DROPDOWN_TEMPLATE", 280, sources, SetupItem);
 			return true;
 		}
 
@@ -577,36 +618,42 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				}
 			}
 
-			foreach (var file in files.OrderBy(s => s.Key))
+			foreach (var file in files)
 			{
-				if (!allowedExtensions.Any(ext => file.Key.EndsWith(ext, true, CultureInfo.InvariantCulture)))
-					continue;
-
 				foreach (var package in file.Value)
+				{
+					// Don't show unknown files in the engine dir - it is full of code and git and IDE files.
+					// But do show supported types that are inside just in case.
+					// Also don't show "files" without extensions because those may be folders.
+					var fileExtension = Path.GetExtension(file.Key.ToLowerInvariant());
+					if (string.IsNullOrWhiteSpace(fileExtension) || (package.Name == Platform.EngineDir && !allowedExtensions.Contains(fileExtension)))
+						continue;
+
 					AddAsset(assetList, file.Key, package, template);
+				}
 			}
 		}
 
 		bool ShowPaletteDropdown(DropDownButtonWidget dropdown)
 		{
-			Func<string, ScrollItemWidget, ScrollItemWidget> setupItem = (name, itemTemplate) =>
+			ScrollItemWidget SetupItem(string name, ScrollItemWidget itemTemplate)
 			{
 				var item = ScrollItemWidget.Setup(itemTemplate,
 					() => currentPalette == name,
 					() => currentPalette = name);
+
 				item.Get<LabelWidget>("LABEL").GetText = () => name;
-
 				return item;
-			};
+			}
 
-			dropdown.ShowDropDown("LABEL_DROPDOWN_TEMPLATE", 280, palettes, setupItem);
+			dropdown.ShowDropDown("LABEL_DROPDOWN_TEMPLATE", 280, palettes, SetupItem);
 			return true;
 		}
 
 		string GetSourceDisplayName(IReadOnlyPackage source)
 		{
 			if (source == null)
-				return "All Packages";
+				return allPackages;
 
 			// Packages that are explicitly mounted in the filesystem use their explicit mount name
 			var fs = (OpenRA.FileSystem.FileSystem)modData.DefaultFileSystem;
@@ -669,6 +716,31 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 			// Just in case we're switching away from a type of asset that forced the music to mute.
 			UnMuteSounds();
+		}
+
+		Widget CreateAssetTypesPanel()
+		{
+			var assetTypesPanel = Ui.LoadWidget("ASSET_TYPES_PANEL", null, new WidgetArgs());
+			var assetTypeTemplate = assetTypesPanel.Get<CheckboxWidget>("ASSET_TYPE_TEMPLATE");
+
+			var allAssetTypes = new[] { AssetType.Sprite, AssetType.Model, AssetType.Audio, AssetType.Video, AssetType.Unknown };
+			foreach (var type in allAssetTypes)
+			{
+				var assetType = (CheckboxWidget)assetTypeTemplate.Clone();
+				var text = type.ToString();
+				assetType.GetText = () => text;
+				assetType.IsChecked = () => assetTypesToDisplay.HasFlag(type);
+				assetType.IsVisible = () => true;
+				assetType.OnClick = () =>
+				{
+					assetTypesToDisplay ^= type;
+					PopulateAssetList();
+				};
+
+				assetTypesPanel.AddChild(assetType);
+			}
+
+			return assetTypesPanel;
 		}
 	}
 }

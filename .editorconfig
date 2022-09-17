@@ -144,6 +144,9 @@ dotnet_diagnostic.IDE0040.severity = warning
 # Make field readonly.
 dotnet_diagnostic.IDE0044.severity = warning
 
+# Unused private member.
+dotnet_diagnostic.IDE0052.severity = warning
+
 # Unused parameter.
 dotnet_diagnostic.IDE0060.severity = warning
 
@@ -152,6 +155,15 @@ dotnet_diagnostic.IDE1006.severity = warning
 
 # Avoid unnecessary zero-length array allocations.
 dotnet_diagnostic.CA1825.severity = warning
+
+# Do not use Enumerable methods on indexable collections. Instead use the collection directly.
+dotnet_diagnostic.CA1826.severity = warning
+
+# Count() is used where Any() could be used instead to improve performance.
+dotnet_diagnostic.CA1827.severity = warning
+
+# Use Length/Count property instead of Enumerable.Count method.
+dotnet_diagnostic.CA1829.severity = warning
 
 # Use string.Contains(char) instead of string.Contains(string) with single characters.
 dotnet_diagnostic.CA1847.severity = warning
@@ -163,9 +175,6 @@ indent_size = 4
 
 # Use 'Count' property instead of 'Any' method.
 dotnet_diagnostic.RCS1080.severity = warning
-
-# Use the "Length" property instead of Enumerable.Count().
-dotnet_diagnostic.CA1829.severity = warning
 
 # Use read-only auto-implemented property.
 dotnet_diagnostic.RCS1170.severity = warning

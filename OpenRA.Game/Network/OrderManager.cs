@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -27,6 +27,8 @@ namespace OpenRA.Network
 		readonly Dictionary<int, (int SyncHash, ulong DefeatState)> syncForFrame = new Dictionary<int, (int, ulong)>();
 
 		public Session LobbyInfo = new Session();
+
+		/// <summary> Null when watching a replay </summary>
 		public Session.Client LocalClient => LobbyInfo.ClientWithIndex(Connection.LocalClientId);
 		public World World;
 		public int OrderQueueLength => pendingOrders.Count > 0 ? pendingOrders.Min(q => q.Value.Count) : 0;
@@ -50,10 +52,6 @@ namespace OpenRA.Network
 
 		readonly List<ClientOrder> processClientOrders = new List<ClientOrder>();
 		readonly List<int> processClientsToRemove = new List<int>();
-
-		readonly List<TextNotification> notificationsCache = new List<TextNotification>();
-
-		public IReadOnlyList<TextNotification> NotificationsCache => notificationsCache;
 
 		bool disposed;
 		bool generateSyncReport = false;
@@ -108,7 +106,6 @@ namespace OpenRA.Network
 		{
 			Connection = conn;
 			syncReport = new SyncReport(this);
-			AddTextNotification += CacheTextNotification;
 
 			LastTickTime = new TickTime(() => SuggestedTimestep, Game.RunTime);
 		}
@@ -125,12 +122,6 @@ namespace OpenRA.Network
 				localImmediateOrders.Add(order);
 			else
 				localOrders.Add(order);
-		}
-
-		public Action<TextNotification> AddTextNotification = (notification) => { };
-		void CacheTextNotification(TextNotification notification)
-		{
-			notificationsCache.Add(notification);
 		}
 
 		void SendImmediateOrders()

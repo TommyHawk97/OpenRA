@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -25,6 +25,84 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 {
 	public class ReplayBrowserLogic : ChromeLogic
 	{
+		[TranslationReference("time")]
+		static readonly string Duration = "duration";
+
+		[TranslationReference]
+		static readonly string Singleplayer = "singleplayer";
+
+		[TranslationReference]
+		static readonly string Multiplayer = "multiplayer";
+
+		[TranslationReference]
+		static readonly string Today = "today";
+
+		[TranslationReference]
+		static readonly string LastWeek = "last-week";
+
+		[TranslationReference]
+		static readonly string LastFortnight = "last-fortnight";
+
+		[TranslationReference]
+		static readonly string LastMonth = "last-month";
+
+		[TranslationReference]
+		static readonly string ReplayDurationVeryShort = "replay-duration-very-short";
+
+		[TranslationReference]
+		static readonly string ReplayDurationShort = "replay-duration-short";
+
+		[TranslationReference]
+		static readonly string ReplayDurationMedium = "replay-duration-medium";
+
+		[TranslationReference]
+		static readonly string ReplayDurationLong = "replay-duration-long";
+
+		[TranslationReference]
+		static readonly string RenameReplayTitle = "rename-replay-title";
+
+		[TranslationReference]
+		static readonly string RenameReplayPrompt = "rename-replay-prompt";
+
+		[TranslationReference]
+		static readonly string RenameReplayAccept = "rename-replay-accept";
+
+		[TranslationReference]
+		static readonly string DeleteReplayTitle = "delete-replay-title";
+
+		[TranslationReference("replay")]
+		static readonly string DeleteReplayPrompt = "delete-replay-prompt";
+
+		[TranslationReference]
+		static readonly string DeleteReplayAccept = "delete-replay-accept";
+
+		[TranslationReference]
+		static readonly string DeleteAllReplaysTitle = "delete-all-replays-title";
+
+		[TranslationReference("count")]
+		static readonly string DeleteAllReplaysPrompt = "delete-all-replays-prompt";
+
+		[TranslationReference]
+		static readonly string DeleteAllReplaysAccept = "delete-all-replays-accept";
+
+		[TranslationReference("file")]
+		static readonly string ReplayDeletionFailed = "replay-deletion-failed";
+
+		[TranslationReference]
+		static readonly string Players = "players";
+
+		[TranslationReference("team")]
+		static readonly string TeamNumber = "team-number";
+
+		[TranslationReference]
+		static readonly string NoTeam = "no-team";
+
+		[TranslationReference]
+		static readonly string Victory = "victory";
+
+		[TranslationReference]
+		static readonly string Defeat = "defeat";
+
 		static Filter filter = new Filter();
 
 		readonly Widget panel;
@@ -101,7 +179,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			});
 
 			var replayDuration = new CachedTransform<ReplayMetadata, string>(r =>
-				$"Duration: {WidgetUtils.FormatTimeSeconds((int)selectedReplay.GameInfo.Duration.TotalSeconds)}");
+				modData.Translation.GetString(Duration, Translation.Arguments("time", WidgetUtils.FormatTimeSeconds((int)selectedReplay.GameInfo.Duration.TotalSeconds))));
 			panel.Get<LabelWidget>("DURATION").GetText = () => replayDuration.Update(selectedReplay);
 
 			SetupFilters();
@@ -153,8 +231,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					var options = new List<(GameType GameType, string Text)>
 					{
 						(GameType.Any, ddb.GetText()),
-						(GameType.Singleplayer, "Singleplayer"),
-						(GameType.Multiplayer, "Multiplayer")
+						(GameType.Singleplayer, modData.Translation.GetString(Singleplayer)),
+						(GameType.Multiplayer, modData.Translation.GetString(Multiplayer))
 					};
 
 					var lookup = options.ToDictionary(kvp => kvp.GameType, kvp => kvp.Text);
@@ -186,10 +264,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					var options = new List<(DateType DateType, string Text)>
 					{
 						(DateType.Any, ddb.GetText()),
-						(DateType.Today, "Today"),
-						(DateType.LastWeek, "Last 7 days"),
-						(DateType.LastFortnight, "Last 14 days"),
-						(DateType.LastMonth, "Last 30 days")
+						(DateType.Today, modData.Translation.GetString(Today)),
+						(DateType.LastWeek, modData.Translation.GetString(LastWeek)),
+						(DateType.LastFortnight, modData.Translation.GetString(LastFortnight)),
+						(DateType.LastMonth, modData.Translation.GetString(LastMonth))
 					};
 
 					var lookup = options.ToDictionary(kvp => kvp.DateType, kvp => kvp.Text);
@@ -222,10 +300,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					var options = new List<(DurationType DurationType, string Text)>
 					{
 						(DurationType.Any, ddb.GetText()),
-						(DurationType.VeryShort, "Under 5 min"),
-						(DurationType.Short, "Short (10 min)"),
-						(DurationType.Medium, "Medium (30 min)"),
-						(DurationType.Long, "Long (60+ min)")
+						(DurationType.VeryShort, modData.Translation.GetString(ReplayDurationVeryShort)),
+						(DurationType.Short, modData.Translation.GetString(ReplayDurationShort)),
+						(DurationType.Medium, modData.Translation.GetString(ReplayDurationMedium)),
+						(DurationType.Long, modData.Translation.GetString(ReplayDurationLong))
 					};
 
 					var lookup = options.ToDictionary(kvp => kvp.DurationType, kvp => kvp.Text);
@@ -259,8 +337,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					var options = new List<(WinState WinState, string Text)>
 					{
 						(WinState.Undefined, ddb.GetText()),
-						(WinState.Lost, "Defeat"),
-						(WinState.Won, "Victory")
+						(WinState.Lost, modData.Translation.GetString(Defeat)),
+						(WinState.Won, modData.Translation.GetString(Victory))
 					};
 
 					var lookup = options.ToDictionary(kvp => kvp.WinState, kvp => kvp.Text);
@@ -393,13 +471,13 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				var directoryName = Path.GetDirectoryName(r.FilePath);
 				var invalidChars = Path.GetInvalidFileNameChars();
 
-				ConfirmationDialogs.TextInputPrompt(
-					"Rename Replay",
-					"Enter a new file name:",
+				ConfirmationDialogs.TextInputPrompt(modData,
+					RenameReplayTitle,
+					RenameReplayPrompt,
 					initialName,
 					onAccept: newName => RenameReplay(r, newName),
 					onCancel: null,
-					acceptText: "Rename",
+					acceptText: RenameReplayAccept,
 					cancelText: null,
 					inputValidator: newName =>
 					{
@@ -421,15 +499,16 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 			Action<ReplayMetadata, Action> onDeleteReplay = (r, after) =>
 			{
-				ConfirmationDialogs.ButtonPrompt(
-					title: "Delete selected replay?",
-					text: $"Delete replay '{Path.GetFileNameWithoutExtension(r.FilePath)}'?",
+				ConfirmationDialogs.ButtonPrompt(modData,
+					title: DeleteReplayTitle,
+					text: DeleteReplayPrompt,
+					textArguments: Translation.Arguments("replay", Path.GetFileNameWithoutExtension(r.FilePath)),
 					onConfirm: () =>
 					{
 						DeleteReplay(r);
 						after?.Invoke();
 					},
-					confirmText: "Delete",
+					confirmText: DeleteReplayAccept,
 					onCancel: () => { });
 			};
 
@@ -445,7 +524,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			};
 
 			var deleteAllButton = panel.Get<ButtonWidget>("MNG_DELALL_BUTTON");
-			deleteAllButton.IsDisabled = () => replayState.Count(kvp => kvp.Value.Visible) == 0;
+			deleteAllButton.IsDisabled = () => !replayState.Any(kvp => kvp.Value.Visible);
 			deleteAllButton.OnClick = () =>
 			{
 				var list = replayState.Where(kvp => kvp.Value.Visible).Select(kvp => kvp.Key).ToList();
@@ -458,16 +537,19 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					return;
 				}
 
-				ConfirmationDialogs.ButtonPrompt(
-					title: "Delete all selected replays?",
-					text: $"Delete {list.Count} replays?",
+				ConfirmationDialogs.ButtonPrompt(modData,
+					title: DeleteAllReplaysTitle,
+					text: DeleteAllReplaysPrompt,
+					textArguments: Translation.Arguments("count", list.Count),
 					onConfirm: () =>
 					{
-						list.ForEach(DeleteReplay);
+						foreach (var replayMetadata in list)
+							DeleteReplay(replayMetadata);
+
 						if (selectedReplay == null)
 							SelectFirstVisibleReplay();
 					},
-					confirmText: "Delete All",
+					confirmText: DeleteAllReplaysAccept,
 					onCancel: () => { });
 			};
 		}
@@ -498,7 +580,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			}
 			catch (Exception ex)
 			{
-				TextNotificationsManager.Debug("Failed to delete replay file '{0}'. See the logs for details.", replay.FilePath);
+				TextNotificationsManager.Debug(modData.Translation.GetString(ReplayDeletionFailed, Translation.Arguments("file", replay.FilePath)));
 				Log.Write("debug", ex.ToString());
 				return;
 			}
@@ -511,7 +593,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			replayState.Remove(replay);
 		}
 
-		bool EvaluateReplayVisibility(ReplayMetadata replay)
+		static bool EvaluateReplayVisibility(ReplayMetadata replay)
 		{
 			// Game type
 			if ((filter.Type == GameType.Multiplayer && replay.GameInfo.IsSinglePlayer) || (filter.Type == GameType.Singleplayer && !replay.GameInfo.IsSinglePlayer))
@@ -634,7 +716,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				var noTeams = players.Count() == 1;
 				foreach (var p in players)
 				{
-					var label = noTeams ? "Players" : p.Key == 0 ? "No Team" : $"Team {p.Key}";
+					var label = noTeams ? modData.Translation.GetString(Players) : p.Key > 0
+						? modData.Translation.GetString(TeamNumber, Translation.Arguments("team", p.Key))
+						: modData.Translation.GetString(NoTeam);
+
 					teams.Add(label, p);
 				}
 
@@ -675,14 +760,15 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			}
 			catch (Exception e)
 			{
-				Log.Write("debug", "Exception while parsing replay: {0}", e);
+				Log.Write("debug", $"Exception while parsing replay: {replay}");
+				Log.Write("debug", e);
 				SelectReplay(null);
 			}
 		}
 
 		void WatchReplay()
 		{
-			if (selectedReplay != null && ReplayUtils.PromptConfirmReplayCompatibility(selectedReplay))
+			if (selectedReplay != null && ReplayUtils.PromptConfirmReplayCompatibility(selectedReplay, modData))
 			{
 				cancelLoadingReplays = true;
 

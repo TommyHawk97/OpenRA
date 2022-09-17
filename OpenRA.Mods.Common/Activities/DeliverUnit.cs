@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -20,7 +20,6 @@ namespace OpenRA.Mods.Common.Activities
 	public class DeliverUnit : Activity
 	{
 		readonly Carryall carryall;
-		readonly BodyOrientation body;
 		readonly bool assignTargetOnFirstRun;
 		readonly WDist deliverRange;
 		readonly Color? targetLineColor;
@@ -40,7 +39,6 @@ namespace OpenRA.Mods.Common.Activities
 			this.targetLineColor = targetLineColor;
 
 			carryall = self.Trait<Carryall>();
-			body = self.Trait<BodyOrientation>();
 		}
 
 		protected override void OnFirstRun(Actor self)
@@ -85,8 +83,6 @@ namespace OpenRA.Mods.Common.Activities
 				// Thus the carryable might have changed since queuing because the death handler set it to null
 				if (carryall.Carryable == null)
 					return;
-
-				self.Trait<Aircraft>().RemoveInfluence();
 
 				var localOffset = carryall.CarryableOffset.Rotate(body.QuantizeOrientation(self.Orientation));
 				var targetPosition = self.CenterPosition + body.LocalToWorld(localOffset);

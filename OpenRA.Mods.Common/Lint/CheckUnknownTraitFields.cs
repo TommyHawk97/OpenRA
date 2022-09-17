@@ -1,6 +1,6 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2021 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2022 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
  * as published by the Free Software Foundation, either version 3 of
@@ -64,13 +64,21 @@ namespace OpenRA.Mods.Common.Lint
 					var traitName = NormalizeName(t.Key);
 
 					// Inherits can never define children
-					if (traitName == "Inherits" && t.Value.Nodes.Count > 0)
+					if (traitName == "Inherits")
 					{
-						emitError($"{t.Location} defines child nodes, which are not valid for Inherits.");
+						if (t.Value.Nodes.Count > 0)
+							emitError($"{t.Location} defines child nodes, which are not valid for Inherits.");
+
 						continue;
 					}
 
 					var traitInfo = modData.ObjectCreator.FindType(traitName + "Info");
+					if (traitInfo == null)
+					{
+						emitError($"{t.Location} defines unknown trait `{traitName}`.");
+						continue;
+					}
+
 					foreach (var field in t.Value.Nodes)
 					{
 						var fieldName = NormalizeName(field.Key);
