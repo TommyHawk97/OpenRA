@@ -1,0 +1,13 @@
+World:
+	LuaScript:
+		Scripts: campaign.lua, utils.lua
+	MusicPlaylist:
+		StartingMusic: target
+		VictoryMusic: gdi_win1
+	MissionData:
+		Briefing: U.N. funding has been re-established. You now have access to a new aircraft, the Orca.\n\nThis unit is to be used to scout out the immediate area.\n\nDestroy all Nod presence in this region.
+		BackgroundVideo: tbrinfo2.vqa
+		BriefingVideo: gdi10.vqa
+		StartVideo: bcanyon.vqa
+		WinVideo: nodflees.vqa
+		LossVideo: gdilose.vqa
